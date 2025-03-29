@@ -88,12 +88,28 @@ namespace Ping_PongClassLibrary
             hasCollidedWithPaddle = false;
         }
 
-        // Метод для подачи
+        //Подача
         public void Serve(double initialSpeed, bool isLeft)
         {
             Vx = initialSpeed * (isLeft ? 1 : -1); 
             Vy = (random.NextDouble() - 0.5) * initialSpeed; 
             hasCollidedWithPaddle = false;
+        }
+
+        //Столкновение мяча с ракеткой
+        public void CollideWithPaddle(IPaddle paddle, bool isLeftPaddle)
+        {
+            bool collisionX = (isLeftPaddle && X - Radius <= paddle.X + paddle.Width && X - Radius >= paddle.X) || 
+                (!isLeftPaddle && X + Radius >= paddle.X + paddle.Width && X + Radius <= paddle.X + paddle.Width);
+
+            bool collisionY = Y + Radius >= paddle.Y && Y - Radius <= paddle.Y + paddle.Height;
+
+            if (collisionX && collisionY)
+            {
+                hasCollidedWithPaddle = true;
+
+            }
+
         }
     }
 }
