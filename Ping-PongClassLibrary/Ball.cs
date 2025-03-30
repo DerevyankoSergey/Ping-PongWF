@@ -99,14 +99,51 @@ namespace Ping_PongClassLibrary
         //Столкновение мяча с ракеткой
         public void CollideWithPaddle(IPaddle paddle, bool isLeftPaddle)
         {
-            bool collisionX = (isLeftPaddle && X - Radius <= paddle.X + paddle.Width && X - Radius >= paddle.X) || 
-                (!isLeftPaddle && X + Radius >= paddle.X + paddle.Width && X + Radius <= paddle.X + paddle.Width);
+            //Проверка столкновения
+            bool hitX = (isLeftPaddle && X - Radius <= paddle.X + paddle.Width && X - Radius >= paddle.X) ||
+                (!isLeftPaddle && X + Radius >= paddle.X && X + Radius <= paddle.X + paddle.Width);
 
-            bool collisionY = Y + Radius >= paddle.Y && Y - Radius <= paddle.Y + paddle.Height;
+            bool hitY = Y + Radius >= paddle.Y && Y - Radius <= paddle.Y + paddle.Height;
 
-            if (collisionX && collisionY)
+            if (hitX && hitY)
             {
                 hasCollidedWithPaddle = true;
+
+                double speed = Math.Sqrt(Vx * Vx + Vy * Vy);
+                double incomingAngle = Math.Atan2(Vy, Vx);
+
+                //Расчет точки удара
+                double hitYPos = (paddle.Y + paddle.Height / 2) - Y;
+                double hitYNorm = hitYPos/(paddle.Height/2);
+
+                double maxAngel = Math.PI / 2;
+                double angelOffset = hitYNorm * maxAngel;
+
+                double paddleEffect = paddle.Vy * 0.1;
+
+                //Угол отскока
+                double newAngle;
+                if (isLeftPaddle)
+                    newAngle = Math.PI - incomingAngle + angelOffset;
+                else
+                    newAngle = -incomingAngle + angelOffset;
+
+                newAngle = (newAngle + 2 * Math.PI) % (2*Math.PI);
+                if (newAngle > Math.PI) newAngle -= 2 * Math.PI;
+
+
+                //Новая скорость
+                double bounce = paddle.Elasticity ?? 1.0;
+                double newSpeed = speed * bounce;
+
+                //Применение новых скоростей
+                Vx = newSpeed * Math.Cos(newAngle);
+                Vy = newSpeed * Math.Sin(newAngle) + paddleEffect;
+
+                if (isLeftPaddle)
+                    X = paddle.X + paddle.Width + Radius;
+                else
+                    X = paddle.X - Radius;
 
             }
 
