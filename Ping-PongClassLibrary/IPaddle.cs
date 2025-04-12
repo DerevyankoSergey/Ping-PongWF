@@ -15,11 +15,7 @@ namespace Ping_PongClassLibrary
         public double Vy { get; set; }
         public double? Elasticity { get; set; }
 
-        public void UpdateVelocity(double newY, double deltaTime)
-        {
-            Vy = (newY - Y) / deltaTime;
-            Y = newY;
-        }
+        public void UpdateVelocity(double newY, double deltaTime);
 
     }
 }

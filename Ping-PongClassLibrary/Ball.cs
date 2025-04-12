@@ -19,6 +19,8 @@ namespace Ping_PongClassLibrary
 
         private readonly Random random = new Random();
 
+        public event Action<bool> OnScore;
+
         public Ball(double x, double y,double radius, double mass)
         {
             X = x;
