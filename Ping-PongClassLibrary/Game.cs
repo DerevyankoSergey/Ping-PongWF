@@ -33,6 +33,12 @@ namespace Ping_PongClassLibrary
 
         public void MovePaddle1(double newY) => player1Paddle.UpdateVelocity(newY, 0.016);
         public void MovePaddle2(double newY) => player2Paddle.UpdateVelocity(newY, 0.016);
+        public void Serve() => ball.Serve(300, gameManager.IsPlayer1Turn);
+        public Ball GetBall() => ball;
+        public IPaddle GetPlayer1Paddle() => player1Paddle;
+        public IPaddle GetPlayer2Paddle() => player2Paddle;
+        public Table GetTable() => table;
+        public GameManager GetGameManager() => gameManager;
 
     }
 }
