@@ -1,154 +1,346 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Ping_PongClassLibrary
 {
     public class Ball
     {
-        // Свойства мяча
         public double X { get; private set; }
         public double Y { get; private set; }
         public double Vx { get; private set; }
         public double Vy { get; private set; }
         public double Radius { get; private set; }
-        public double Mass { get; private set; }
+        private const double BallSpeed = 300;
+        private const double StrikeSpeedMultiplier = 1.5;
         private bool hasCollidedWithPaddle;
-
         private readonly Random random = new Random();
+        private IPaddle player1Paddle;
+        private IPaddle player2Paddle;
+        private bool isPaused;
+        private double pauseTime;
+        private const double PauseDuration = 1.0;
+        private bool isPausedDueToOutOfBounds;
+        private bool isWaitingForServe;
+        private bool isPlayer1Serving;
+        private readonly Table table;
+        private bool hasTouchedOpponentTable;
 
         public event Action<bool> OnScore;
 
-        public Ball(double x, double y,double radius, double mass)
+        public Ball(double x, double y, double radius,
+                IPaddle player1Paddle, IPaddle player2Paddle, Table table)
         {
             X = x;
             Y = y;
             Radius = radius;
-            Mass = mass;
+            this.player1Paddle = player1Paddle;
+            this.player2Paddle = player2Paddle;
             Vx = 0;
             Vy = 0;
             hasCollidedWithPaddle = false;
+            isPaused = false;
+            pauseTime = 0;
+            isPausedDueToOutOfBounds = false;
+            isWaitingForServe = false;
+            hasTouchedOpponentTable = false;
+            this.table = table;
         }
 
-        // Обновление позиции мяча
-        public void Update(double deltaTime, int screenWidth, int screenHeight, int tableLeft, int tableRight, int tableTop, int tableBottom, bool isPlayer1Serving)
+        public bool IsPaused => isPaused;
+        public double GetPauseTime => pauseTime;
+        public bool IsPausedDueToOutOfBounds => isPausedDueToOutOfBounds;
+
+        public void UpdatePaddles(IPaddle newPlayer1Paddle, IPaddle newPlayer2Paddle)
         {
-            // Если мяч не движется (скорость нулевая)
-            if (Vx == 0 && Vy == 0)
+            player1Paddle = newPlayer1Paddle;
+            player2Paddle = newPlayer2Paddle;
+        }
+
+        public void Update(double deltaTime, int screenWidth, int screenHeight,
+            int tableLeft, int tableRight, int tableTop, int tableBottom,
+            bool isPlayer1Serving)
+        {
+            if (isPaused)
+            {
+                pauseTime -= deltaTime;
+                if (pauseTime <= 0)
+                {
+                    isPaused = false;
+                    ResetForServe(screenWidth, screenHeight, tableLeft, tableRight,
+                                  tableTop, tableBottom, isPlayer1Serving);
+                }
                 return;
+            }
+
+            if (isWaitingForServe)
+            {
+                IPaddle servingPaddle = isPlayer1Serving ? player1Paddle : player2Paddle;
+                bool serveResult = ServeByPaddle(servingPaddle, isPlayer1Serving);
+                if (serveResult)
+                {
+                    isWaitingForServe = false;
+                    hasTouchedOpponentTable = false;
+                }
+                return;
+            }
+
+            if (Vx == 0 && Vy == 0)
+            {
+                return;
+            }
+
+            double previousX = X;
+            double previousY = Y;
 
             X += Vx * deltaTime;
             Y += Vy * deltaTime;
 
-            // Проверка выхода за верхнюю сторону стола
-            if (Y - Radius < tableTop)
+            if (!hasTouchedOpponentTable)
             {
-                ResetForServe(screenWidth, screenHeight, tableLeft, tableRight, tableTop, tableBottom, isPlayer1Serving);
-                return;
-            }
-            // Проверка выхода за нижнюю сторону стола
-            else if (Y + Radius > tableBottom)
-            {
-                ResetForServe(screenWidth, screenHeight, tableLeft, tableRight, tableTop, tableBottom, isPlayer1Serving);
-                return;
+                double netX = (tableLeft + tableRight) / 2;
+                bool isMovingLeft = Vx < 0;
+                bool isMovingRight = Vx > 0;
+
+                bool targetingRightHalf = isMovingRight && hasCollidedWithPaddle && previousX < netX;
+                bool targetingLeftHalf = isMovingLeft && hasCollidedWithPaddle && previousX > netX;
+
+                if ((targetingRightHalf || targetingLeftHalf) &&
+                    Y >= tableTop && Y <= tableBottom)
+                {
+                    if (targetingRightHalf && X >= netX && previousX < netX)
+                    {
+                        hasTouchedOpponentTable = true;
+                    }
+                    else if (targetingLeftHalf && X <= netX && previousX > netX)
+                    {
+                        hasTouchedOpponentTable = true;
+                    }
+                }
             }
 
-            // Проверка выхода за левую боковую сторону стола
-            if (X -  Radius < tableLeft)
+            if (Vx < 0)
             {
-                ResetForServe(screenWidth, screenHeight, tableLeft, tableRight, tableTop, tableBottom, !isPlayer1Serving);
-                return;
+                CheckContinuousCollision(X - Vx * deltaTime, Y - Vy * deltaTime, player1Paddle, true);
             }
-            // Проверка выхода за правую боковую сторону стола
-            else if (X +  Radius > tableRight)
+            else if (Vx > 0)
             {
-                ResetForServe(screenWidth, screenHeight, tableLeft, tableRight, tableTop, tableBottom, !isPlayer1Serving);
-                return;
+                CheckContinuousCollision(X - Vx * deltaTime, Y - Vy * deltaTime, player2Paddle, false);
+            }
+
+            bool isScore = false;
+            bool isPlayer1Miss = false;
+
+            if (X - Radius < 0)
+            {
+                isScore = true;
+                isPlayer1Miss = hasTouchedOpponentTable || !hasCollidedWithPaddle;
+            }
+            else if (X + Radius > screenWidth)
+            {
+                isScore = true;
+                isPlayer1Miss = !(hasTouchedOpponentTable || !hasCollidedWithPaddle);
+            }
+
+            if (isScore)
+            {
+                OnScore?.Invoke(isPlayer1Miss);
+                hasCollidedWithPaddle = false;
+                isPaused = true;
+                pauseTime = PauseDuration;
+                isPausedDueToOutOfBounds = true;
+                hasTouchedOpponentTable = false;
             }
         }
 
-        // Сброс мяча для подачи
-        public void ResetForServe(int screenWidth, int screenHeight, int tableLeft, int tableRight, int tableTop, int tableBottom, bool isPlayer1Serving)
+        private void CheckContinuousCollision(double prevX, double prevY, IPaddle paddle, bool isLeftPaddle)
         {
-            double centerY = (tableTop + tableBottom) / 2.0;
+            double paddingX = paddle.Width * 0.05;
+            double paddingY = paddle.Height * 0.05;
 
-            if (isPlayer1Serving)
-            {
-                X = tableLeft + 20;
-                Y = centerY;
-            }
-            else
-            {
-                X = tableRight - 20;
-                Y = centerY;
-            }
+            double paddleLeft = paddle.X + paddingX;
+            double paddleRight = paddle.X + paddle.Width - paddingX;
+            double paddleTop = paddle.Y - paddle.Height / 2 + paddingY;
+            double paddleBottom = paddle.Y + paddle.Height / 2 - paddingY;
 
-            Vx = 0;
-            Vy = 0;
-            hasCollidedWithPaddle = false;
+            double deltaX = X - prevX;
+            double deltaY = Y - prevY;
+
+            if ((isLeftPaddle && Vx < 0) || (!isLeftPaddle && Vx > 0))
+            {
+                double closestX, closestY;
+
+                if (isLeftPaddle)
+                {
+                    closestX = paddleRight;
+                    if (prevX - Radius <= closestX && X - Radius >= closestX)
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    closestX = paddleLeft;
+                    if (prevX + Radius >= closestX && X + Radius <= closestX)
+                    {
+                        return;
+                    }
+                }
+
+                double t = (closestX - (prevX + (isLeftPaddle ? -Radius : Radius))) / deltaX;
+
+                if (t < 0 || t > 1)
+                {
+                    return;
+                }
+
+                closestY = prevY + t * deltaY;
+
+                if (closestY >= paddleTop - Radius && closestY <= paddleBottom + Radius)
+                {
+                    HandlePaddleCollision(paddle, isLeftPaddle);
+                    X = isLeftPaddle ? paddleRight + Radius : paddleLeft - Radius;
+                    Y = closestY;
+                    hasTouchedOpponentTable = false;
+                }
+            }
         }
 
-        //Подача
-        public void Serve(double initialSpeed, bool isLeft)
+        private void HandlePaddleCollision(IPaddle paddle, bool isLeftPaddle)
         {
-            Vx = initialSpeed * (isLeft ? 1 : -1); 
-            Vy = (random.NextDouble() - 0.5) * initialSpeed; 
-            hasCollidedWithPaddle = false;
+            hasCollidedWithPaddle = true;
+
+            double hitY = (Y - paddle.Y) / (paddle.Height / 2);
+            hitY = Math.Max(-1.0, Math.Min(1.0, hitY));
+
+            const double maxAngle = Math.PI / 4;
+
+            double baseAngle = hitY * maxAngle;
+
+            double paddleInfluence = paddle.Vy / 600.0;
+            double angleAdjustment = paddleInfluence * (Math.PI / 12);
+            double bounceAngle = baseAngle + angleAdjustment;
+
+            bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
+
+            double randomVariation = (random.NextDouble() - 0.5) * (Math.PI / 36);
+            bounceAngle += randomVariation;
+            bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
+
+            double currentSpeed = Math.Sqrt(Vx * Vx + Vy * Vy);
+            double newSpeed = Math.Max(currentSpeed, BallSpeed);
+
+            if (paddle is Paddle p)
+            {
+                if (p.IsStriking)
+                {
+                    newSpeed *= StrikeSpeedMultiplier;
+                    bounceAngle *= 1.2;
+                    bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
+                }
+                bounceAngle *= p.BounceModifier;
+                newSpeed *= p.SpeedModifier;
+            }
+
+            Vx = newSpeed * Math.Cos(bounceAngle) * (isLeftPaddle ? 1 : -1);
+            Vy = newSpeed * Math.Sin(bounceAngle);
         }
 
-        //Столкновение мяча с ракеткой
-        public void CollideWithPaddle(IPaddle paddle, bool isLeftPaddle)
+        public bool ServeByPaddle(IPaddle paddle, bool isLeftPaddle)
         {
-            //Проверка столкновения
-            bool hitX = (isLeftPaddle && X - Radius <= paddle.X + paddle.Width && X - Radius >= paddle.X) ||
-                (!isLeftPaddle && X + Radius >= paddle.X && X + Radius <= paddle.X + paddle.Width);
+            double paddingX = paddle.Width * 0.05;
+            double paddingY = paddle.Height * 0.05;
 
-            bool hitY = Y + Radius >= paddle.Y && Y - Radius <= paddle.Y + paddle.Height;
+            double paddleX = paddle.X;
+            double paddleLeft = paddleX + paddingX;
+            double paddleRight = paddleX + paddle.Width - paddingX;
+            double paddleTop = paddle.Y - paddle.Height / 2 + paddingY;
+            double paddleBottom = paddle.Y + paddle.Height / 2 - paddingY;
 
-            if (hitX && hitY)
+            double ballLeft = X - Radius;
+            double ballRight = X + Radius;
+            double ballTop = Y - Radius;
+            double ballBottom = Y + Radius;
+
+            bool isColliding = ballRight >= paddleLeft && ballLeft <= paddleRight &&
+                               ballBottom >= paddleTop && ballTop <= paddleBottom;
+
+            if (isColliding)
             {
                 hasCollidedWithPaddle = true;
 
-                double speed = Math.Sqrt(Vx * Vx + Vy * Vy);
-                double incomingAngle = Math.Atan2(Vy, Vx);
+                double hitPosition = (Y - paddle.Y) / (paddle.Height / 2);
+                hitPosition = Math.Max(-1, Math.Min(1, hitPosition));
 
-                //Расчет точки удара
-                double hitYPos = (paddle.Y + paddle.Height / 2) - Y;
-                double hitYNorm = hitYPos/(paddle.Height/2);
+                double maxBounceAngle = Math.PI / 12;
+                double bounceAngle = hitPosition * maxBounceAngle;
 
-                double maxAngel = Math.PI / 2;
-                double angelOffset = hitYNorm * maxAngel;
+                double speed = BallSpeed;
+                Paddle p = paddle as Paddle;
+                if (p != null)
+                {
+                    speed *= p.SpeedModifier;
+                    if (p.IsStriking)
+                    {
+                        speed *= StrikeSpeedMultiplier;
+                    }
+                }
 
-                double paddleEffect = paddle.Vy * 0.1;
-
-                //Угол отскока
-                double newAngle;
-                if (isLeftPaddle)
-                    newAngle = Math.PI - incomingAngle + angelOffset;
-                else
-                    newAngle = -incomingAngle + angelOffset;
-
-                newAngle = (newAngle + 2 * Math.PI) % (2*Math.PI);
-                if (newAngle > Math.PI) newAngle -= 2 * Math.PI;
-
-
-                //Новая скорость
-                double bounce = paddle.Elasticity ?? 1.0;
-                double newSpeed = speed * bounce;
-
-                //Применение новых скоростей
-                Vx = newSpeed * Math.Cos(newAngle);
-                Vy = newSpeed * Math.Sin(newAngle) + paddleEffect;
+                Vx = speed * Math.Cos(bounceAngle) * (isLeftPaddle ? 1 : -1);
+                Vy = speed * Math.Sin(bounceAngle);
 
                 if (isLeftPaddle)
-                    X = paddle.X + paddle.Width + Radius;
+                {
+                    X = paddleRight + Radius;
+                }
                 else
-                    X = paddle.X - Radius;
+                {
+                    X = paddleLeft - Radius;
+                }
 
+                return true;
             }
 
+            return false;
+        }
+
+        public void ResetForServe(int screenWidth, int screenHeight,
+                 int tableLeft, int tableRight,
+                 int tableTop, int tableBottom,
+                 bool isPlayer1Serving)
+        {
+            double centerY = (tableTop + tableBottom) / 2;
+            if (isPlayer1Serving)
+            {
+                X = tableLeft + 60;
+                Y = Math.Max(Radius, Math.Min(screenHeight - Radius, centerY));
+            }
+            else
+            {
+                X = tableRight - 60;
+                Y = Math.Max(Radius, Math.Min(screenHeight - Radius, centerY));
+            }
+            Vx = 0;
+            Vy = 0;
+            hasCollidedWithPaddle = false;
+            isPausedDueToOutOfBounds = false;
+            isWaitingForServe = true;
+            this.isPlayer1Serving = isPlayer1Serving;
+            hasTouchedOpponentTable = false;
+        }
+
+        public void Serve(bool isLeft)
+        {
+            Vx = BallSpeed * (isLeft ? 1 : -1);
+            Vy = 0;
+            hasCollidedWithPaddle = false;
+            isWaitingForServe = false;
+            hasTouchedOpponentTable = false;
+        }
+
+        public void InitiateServe(bool isPlayer1Serving)
+        {
+            isWaitingForServe = true;
+            this.isPlayer1Serving = isPlayer1Serving;
+            hasTouchedOpponentTable = false;
         }
     }
 }

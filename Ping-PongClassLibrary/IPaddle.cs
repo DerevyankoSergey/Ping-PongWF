@@ -1,21 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Ping_PongClassLibrary
+﻿namespace Ping_PongClassLibrary
 {
     public interface IPaddle
     {
-        public double X { get; set; }
-        public double Y { get; set; }
-        public double Width { get; set; }
-        public double Height { get; set; }
-        public double Vy { get; set; }
-        public double? Elasticity { get; set; }
-
-        public void UpdateVelocity(double newY, double deltaTime);
-
+        double X { get; set; }
+        double Y { get; set; }
+        double Width { get; set; }
+        double Height { get; set; }
+        double Vy { get; set; }
+        void UpdateVelocity(double newY, double deltaTime);
+        void Strike();
     }
 }
