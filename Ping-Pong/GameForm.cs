@@ -16,7 +16,7 @@ namespace Ping_Pong
         private GLControl glControl;
         private Game game;
         private Timer gameTimer;
-        private int[] textures = new int[48]; // Увеличиваем до 48 для IronPaddle1 и IronPaddle2
+        private int[] textures = new int[48];
         private readonly string contentPath = Path.Combine(Application.StartupPath, "Content");
         private Button restartButton;
         private Button exitButton;
@@ -31,9 +31,14 @@ namespace Ping_Pong
         private bool isNumPad8Pressed = false;
         private bool isNumPad2Pressed = false;
 
-        // Состояние клавиш для подачи (Q, K)
+        // Состояние клавиш для подачи (Q, NumPad5)
         private bool isQPressed = false;
         private bool isKPressed = false;
+
+        // Флаг для блокировки кнопки подачи
+        private bool isServeLocked = false;
+        // Флаг для отслеживания, была ли пауза вызвана выходом мяча за пределы
+        private bool wasPausedDueToOutOfBounds = false;
 
         // Текущие целевые позиции для ракеток
         private double player1TargetY;
@@ -133,7 +138,8 @@ namespace Ping_Pong
             player2TargetY = game.GetPlayer2Paddle().Y;
             isGameOver = false;
             isMenuVisible = false;
-            // Сбрасываем состояние материала ракеток
+            isServeLocked = false; // Разблокируем подачу при рестарте
+            wasPausedDueToOutOfBounds = false;
             isPlayer1PaddleIron = false;
             isPlayer2PaddleIron = false;
             UpdateControlVisibility();
@@ -149,7 +155,8 @@ namespace Ping_Pong
             game = new Game(glControl.Width, glControl.Height);
             player1TargetY = game.GetPlayer1Paddle().Y;
             player2TargetY = game.GetPlayer2Paddle().Y;
-            // Сбрасываем состояние материала ракеток
+            isServeLocked = false; // Разблокируем подачу при выходе в меню
+            wasPausedDueToOutOfBounds = false;
             isPlayer1PaddleIron = false;
             isPlayer2PaddleIron = false;
             UpdateControlVisibility();
@@ -290,6 +297,18 @@ namespace Ping_Pong
                             }
                         }
 
+                        // Проверяем состояние мяча для разблокировки подачи
+                        var ball = game.GetBall();
+                        if (ball.IsPaused && ball.IsPausedDueToOutOfBounds)
+                        {
+                            wasPausedDueToOutOfBounds = true;
+                        }
+                        else if (!ball.IsPaused && wasPausedDueToOutOfBounds)
+                        {
+                            isServeLocked = false; // Разблокируем подачу после паузы из-за выхода мяча за пределы
+                            wasPausedDueToOutOfBounds = false;
+                        }
+
                         glControl.Invalidate();
                     }
 
@@ -360,7 +379,6 @@ namespace Ping_Pong
             LoadTextureFromFile(textures[44], "gameover_background.png", Color.Gray);
             LoadTextureFromFile(textures[45], "play.png", Color.Green);
 
-            // Загружаем текстуры для "железных" ракеток
             LoadTextureFromFile(textures[46], "IronPaddle1.png", Color.Gray);
             LoadTextureFromFile(textures[47], "IronPaddle2.png", Color.Gray);
         }
@@ -536,12 +554,12 @@ namespace Ping_Pong
                 var paddle1 = game.GetPlayer1Paddle();
                 DrawTexturedQuad(paddle1.X, paddle1.Y - paddle1.Height / 2,
                                  paddle1.Width, paddle1.Height,
-                                 isPlayer1PaddleIron ? textures[46] : textures[1]); // Используем IronPaddle1, если активен приз
+                                 isPlayer1PaddleIron ? textures[46] : textures[1]);
 
                 var paddle2 = game.GetPlayer2Paddle();
                 DrawTexturedQuad(paddle2.X, paddle2.Y - paddle2.Height / 2,
                                  paddle2.Width, paddle2.Height,
-                                 isPlayer2PaddleIron ? textures[47] : textures[2]); // Используем IronPaddle2, если активен приз
+                                 isPlayer2PaddleIron ? textures[47] : textures[2]);
 
                 var ball = game.GetBall();
                 if (!ball.IsPaused)
@@ -663,19 +681,21 @@ namespace Ping_Pong
                     isNumPad2Pressed = true;
                     break;
                 case Keys.Q:
-                    if (!isQPressed && game.GetGameManager().IsPlayer1Turn)
+                    if (!isQPressed && game.GetGameManager().IsPlayer1Turn && !isServeLocked)
                     {
                         game.StrikePaddle1();
                         game.TryServe(true);
                         isQPressed = true;
+                        isServeLocked = true; // Блокируем подачу после выполнения
                     }
                     break;
                 case Keys.NumPad5:
-                    if (!isKPressed && !game.GetGameManager().IsPlayer1Turn)
+                    if (!isKPressed && !game.GetGameManager().IsPlayer1Turn && !isServeLocked)
                     {
                         game.StrikePaddle2();
                         game.TryServe(false);
                         isKPressed = true;
+                        isServeLocked = true; // Блокируем подачу после выполнения
                     }
                     break;
             }
