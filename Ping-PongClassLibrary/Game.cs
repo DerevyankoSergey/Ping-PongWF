@@ -112,7 +112,6 @@ namespace Ping_PongClassLibrary
             if (prizes.Count > 0)
                 return;
 
-            // Случайно выбираем, для какого игрока спавнить приз
             bool isLeftSide = random.Next(2) == 0;
 
             double x, y;
