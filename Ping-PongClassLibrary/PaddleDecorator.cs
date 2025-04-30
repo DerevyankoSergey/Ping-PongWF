@@ -48,8 +48,7 @@
         {
             if (paddle is Paddle p)
             {
-                p.BounceModifier = 1.2; // Увеличиваем угол
-                p.SpeedModifier = 1.3; // Увеличиваем скорость
+                p.SpeedModifier = 2.0; // Увеличиваем скорость
             }
         }
     }

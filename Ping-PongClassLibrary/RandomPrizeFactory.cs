@@ -4,8 +4,8 @@ namespace Ping_PongClassLibrary
 {
     public class RandomPrizeFactory : PrizeFactory
     {
-        private readonly double width = 70;
-        private readonly double height = 70;
+        private readonly double width = 40;
+        private readonly double height = 40;
 
         public override IPrize CreatePrize(double x, double y, int textureId, double spawnTime)
         {

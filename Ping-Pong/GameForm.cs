@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.IO;
@@ -15,12 +16,10 @@ namespace Ping_Pong
         private GLControl glControl;
         private Game game;
         private Timer gameTimer;
-        private int[] textures = new int[29];
+        private int[] textures = new int[46]; // Увеличиваем до 46 для новой текстуры "Play"
         private readonly string contentPath = Path.Combine(Application.StartupPath, "Content");
-        private Button playButton;
         private Button restartButton;
         private Button exitButton;
-        private Label winnerLabel;
         private bool isMenuVisible = true;
         private bool isGameOver = false;
 
@@ -42,6 +41,25 @@ namespace Ping_Pong
 
         private const double paddleSpeed = 600.0;
 
+        // Размеры и позиция текстуры "Play" (уменьшены)
+        private double playTextureWidth = 100;  // Было 200, теперь 100
+        private double playTextureHeight = 50;  // Было 100, теперь 50
+        private double playTextureX;
+        private double playTextureY;
+
+        // Словари для маппинга букв на индексы текстур
+        private readonly Dictionary<char, int> redLetterTextures = new Dictionary<char, int>
+        {
+            { 'B', 29 }, { 'D', 30 }, { 'E', 31 }, { 'I', 32 },
+            { 'L', 33 }, { 'N', 34 }, { 'R', 35 }, { 'W', 36 }
+        };
+
+        private readonly Dictionary<char, int> blueLetterTextures = new Dictionary<char, int>
+        {
+            { 'B', 37 }, { 'E', 38 }, { 'I', 39 }, { 'L', 40 },
+            { 'N', 41 }, { 'U', 42 }, { 'W', 43 }
+        };
+
         public GameForm()
         {
             this.Text = "Пинг-Понг";
@@ -60,49 +78,16 @@ namespace Ping_Pong
 
         private void InitializeMenu()
         {
-            playButton = new Button
-            {
-                Text = "Играть",
-                Size = new Size(100, 50),
-                Font = new Font("Arial", 16, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.Green,
-                FlatStyle = FlatStyle.Flat,
-                Visible = true
-            };
-            playButton.FlatAppearance.BorderSize = 0;
-            playButton.Location = new Point(
-                (this.ClientSize.Width - playButton.Width) / 2,
-                (this.ClientSize.Height - playButton.Height) / 2
-            );
-            playButton.Click += PlayButton_Click;
-
-            this.Controls.Add(playButton);
+            // Кнопка "Play" реализована как текстура в OpenGL,
+            // поэтому здесь ничего не добавляем в элементы управления Windows Forms.
         }
 
         private void InitializeGameOverPanel()
         {
-            winnerLabel = new Label
-            {
-                Font = new Font("Arial", 36, FontStyle.Bold),
-                ForeColor = Color.Red,
-                BackColor = Color.Transparent,
-                AutoSize = true,
-                Visible = false,
-                FlatStyle = FlatStyle.Flat,
-                UseCompatibleTextRendering = true
-            };
-            winnerLabel.Paint += (s, e) =>
-            {
-                e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
-                ControlPaint.DrawStringDisabled(e.Graphics, winnerLabel.Text, winnerLabel.Font, winnerLabel.ForeColor, new RectangleF(winnerLabel.Location, winnerLabel.Size), new StringFormat());
-            };
-            this.Controls.Add(winnerLabel);
-
             restartButton = new Button
             {
                 Text = "Рестарт",
-                Size = new Size(100, 50),
+                Size = new Size(150, 50),
                 Font = new Font("Arial", 16, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.Blue,
@@ -111,8 +96,8 @@ namespace Ping_Pong
             };
             restartButton.FlatAppearance.BorderSize = 0;
             restartButton.Location = new Point(
-                (this.ClientSize.Width - restartButton.Width) / 2 - 60,
-                this.ClientSize.Height / 2
+                (this.ClientSize.Width - restartButton.Width) / 2,
+                this.ClientSize.Height / 2 - 30
             );
             restartButton.Click += RestartButton_Click;
 
@@ -128,22 +113,13 @@ namespace Ping_Pong
             };
             exitButton.FlatAppearance.BorderSize = 0;
             exitButton.Location = new Point(
-                (this.ClientSize.Width - exitButton.Width) / 2 + 60,
-                this.ClientSize.Height / 2
+                (this.ClientSize.Width - exitButton.Width) / 2,
+                this.ClientSize.Height / 2 + 30
             );
             exitButton.Click += ExitButton_Click;
 
             this.Controls.Add(restartButton);
             this.Controls.Add(exitButton);
-        }
-
-        private void PlayButton_Click(object sender, EventArgs e)
-        {
-            isMenuVisible = false;
-            isGameOver = false;
-            UpdateControlVisibility();
-            glControl.Focus();
-            gameTimer.Start();
         }
 
         private void RestartButton_Click(object sender, EventArgs e)
@@ -177,7 +153,8 @@ namespace Ping_Pong
             glControl.Dock = DockStyle.Fill;
             glControl.Paint += RenderScene;
             glControl.KeyDown += HandleInput;
-            glControl.KeyUp += HandleInputUp;
+            glControl.KeyUp += HandleInputRelease;
+            glControl.MouseClick += HandleMouseClick;
             glControl.Load += (sender, e) =>
             {
                 glControl.MakeCurrent();
@@ -186,10 +163,8 @@ namespace Ping_Pong
             };
             this.Controls.Add(glControl);
             glControl.SendToBack();
-            playButton.BringToFront();
             restartButton.BringToFront();
             exitButton.BringToFront();
-            winnerLabel.BringToFront();
         }
 
         private void InitializeGame()
@@ -260,22 +235,9 @@ namespace Ping_Pong
 
         private void UpdateControlVisibility()
         {
-            playButton.Visible = isMenuVisible;
             glControl.Visible = true;
             restartButton.Visible = isGameOver;
             exitButton.Visible = isGameOver;
-            winnerLabel.Visible = isGameOver;
-
-            if (isGameOver)
-            {
-                winnerLabel.Text = game.GetGameManager().Winner == 1 ? "RED WIN" : "BLUE WIN";
-                winnerLabel.ForeColor = game.GetGameManager().Winner == 1 ? Color.Red : Color.Blue;
-                winnerLabel.Location = new Point(
-                    (this.ClientSize.Width - winnerLabel.Width) / 2,
-                    this.ClientSize.Height / 4
-                );
-            }
-
             glControl.Invalidate();
         }
 
@@ -298,7 +260,7 @@ namespace Ping_Pong
             if (!Directory.Exists(contentPath))
                 Directory.CreateDirectory(contentPath);
 
-            GL.GenTextures(29, textures);
+            GL.GenTextures(46, textures);
             LoadTextureFromFile(textures[0], "table.png", Color.DarkGreen);
             LoadTextureFromFile(textures[1], "paddle1.png", Color.White);
             LoadTextureFromFile(textures[2], "paddle2.png", Color.White);
@@ -316,6 +278,19 @@ namespace Ping_Pong
             string[] blueDigitNames = { "zeroBlue", "oneBlue", "twoBlue", "threeBlue", "fourBlue", "fiveBlue", "sixBlue", "sevenBlue", "eightBlue", "nineBlue" };
             for (int i = 0; i < 10; i++)
                 LoadTextureFromFile(textures[19 + i], $"{blueDigitNames[i]}.png", Color.White);
+
+            string[] redLetters = { "B", "D", "E", "I", "L", "N", "R", "W" };
+            for (int i = 0; i < redLetters.Length; i++)
+                LoadTextureFromFile(textures[29 + i], $"{redLetters[i]}.png", Color.White);
+
+            string[] blueLetters = { "B", "E", "I", "L", "N", "U", "W" };
+            for (int i = 0; i < blueLetters.Length; i++)
+                LoadTextureFromFile(textures[37 + i], $"{blueLetters[i]}Blue.png", Color.White);
+
+            LoadTextureFromFile(textures[44], "gameover_background.png", Color.Gray);
+
+            // Загружаем текстуру "Play"
+            LoadTextureFromFile(textures[45], "play.png", Color.Green);
         }
 
         private void LoadTextureFromFile(int textureId, string filename, Color fallbackColor)
@@ -405,7 +380,42 @@ namespace Ping_Pong
         {
             ErrorCode error = GL.GetError();
             if (error != ErrorCode.NoError)
-                throw new Exception($"OpenGL error in {context}: {(int)error} ({error})");
+                throw new Exception($"Ошибка OpenGL в {context}: {(int)error} ({error})");
+        }
+
+        private void DrawTexturedQuad(double x, double y, double width, double height, int textureId)
+        {
+            GL.BindTexture(TextureTarget.Texture2D, textureId);
+            int boundTexture;
+            GL.GetInteger(GetPName.TextureBinding2D, out boundTexture);
+            GL.Begin(PrimitiveType.Quads);
+            GL.TexCoord2(0, 0); GL.Vertex2(x, y);
+            GL.TexCoord2(1, 0); GL.Vertex2(x + width, y);
+            GL.TexCoord2(1, 1); GL.Vertex2(x + width, y + height);
+            GL.TexCoord2(0, 1); GL.Vertex2(x, y + height);
+            GL.End();
+            CheckGLError("DrawTexturedQuad");
+        }
+
+        private void DrawText(string text, double x, double y, bool isRed, double letterWidth, double letterHeight)
+        {
+            double currentX = x;
+            var letterTextures = isRed ? redLetterTextures : blueLetterTextures;
+
+            foreach (char c in text.ToUpper())
+            {
+                if (c == ' ')
+                {
+                    currentX += letterWidth;
+                    continue;
+                }
+
+                if (letterTextures.TryGetValue(c, out int textureId))
+                {
+                    DrawTexturedQuad(currentX, y, letterWidth, letterHeight, textures[textureId]);
+                    currentX += letterWidth;
+                }
+            }
         }
 
         private void RenderScene(object sender, PaintEventArgs e)
@@ -418,16 +428,36 @@ namespace Ping_Pong
                 GL.ClearColor(0.0f, 0.0f, 0.5f, 1.0f);
                 GL.Clear(ClearBufferMask.ColorBufferBit);
                 DrawTexturedQuad(0, 0, glControl.Width, glControl.Height, textures[8]);
+
+                // Рассчитываем позицию текстуры "Play" с учетом новых размеров
+                playTextureX = (glControl.Width - playTextureWidth) / 2;
+                playTextureY = (glControl.Height / 2) + 20;
+                DrawTexturedQuad(playTextureX, playTextureY,
+                                 playTextureWidth, playTextureHeight, textures[45]);
+
                 CheckGLError("RenderScene Menu");
             }
             else if (isGameOver)
             {
-                GL.ClearColor(0.133f, 0.125f, 0.204f, 1.0f);
+                GL.ClearColor(0.0f, 0.0f, 0.5f, 1.0f);
                 GL.Clear(ClearBufferMask.ColorBufferBit);
+                DrawTexturedQuad(0, 0, glControl.Width, glControl.Height, textures[44]);
+
+                string winnerText = game.GetGameManager().Winner == 1 ? "RED WIN" : "BLUE WIN";
+                bool isRed = game.GetGameManager().Winner == 1;
+                double letterWidth = 50;
+                double letterHeight = 100;
+                double textX = (glControl.Width - (winnerText.Length * letterWidth)) / 2;
+                double textY = glControl.Height / 4;
+                DrawText(winnerText, textX, textY, isRed, letterWidth, letterHeight);
+
                 CheckGLError("RenderScene GameOver");
             }
             else
             {
+                GL.ClearColor(0.133f, 0.125f, 0.204f, 1.0f);
+                GL.Clear(ClearBufferMask.ColorBufferBit);
+
                 DrawTexturedQuad(game.GetTable().Left, game.GetTable().Top,
                                  game.GetTable().Width, game.GetTable().Height,
                                  textures[0]);
@@ -517,24 +547,28 @@ namespace Ping_Pong
                         g.DrawString(timerText, font, brush, timerX, timerY);
                     }
                 }
+
                 CheckGLError("RenderScene Game");
             }
 
             glControl.SwapBuffers();
         }
 
-        private void DrawTexturedQuad(double x, double y, double width, double height, int textureId)
+        private void HandleMouseClick(object sender, MouseEventArgs e)
         {
-            GL.BindTexture(TextureTarget.Texture2D, textureId);
-            int boundTexture;
-            GL.GetInteger(GetPName.TextureBinding2D, out boundTexture);
-            GL.Begin(PrimitiveType.Quads);
-            GL.TexCoord2(0, 0); GL.Vertex2(x, y);
-            GL.TexCoord2(1, 0); GL.Vertex2(x + width, y);
-            GL.TexCoord2(1, 1); GL.Vertex2(x + width, y + height);
-            GL.TexCoord2(0, 1); GL.Vertex2(x, y + height);
-            GL.End();
-            CheckGLError("DrawTexturedQuad");
+            if (isMenuVisible)
+            {
+                // Проверяем, попал ли клик в область текстуры "Play"
+                if (e.X >= playTextureX && e.X <= playTextureX + playTextureWidth &&
+                    e.Y >= playTextureY && e.Y <= playTextureY + playTextureHeight)
+                {
+                    isMenuVisible = false;
+                    isGameOver = false;
+                    UpdateControlVisibility();
+                    glControl.Focus();
+                    gameTimer.Start();
+                }
+            }
         }
 
         private void HandleInput(object sender, KeyEventArgs e)
@@ -577,7 +611,7 @@ namespace Ping_Pong
             }
         }
 
-        private void HandleInputUp(object sender, KeyEventArgs e)
+        private void HandleInputRelease(object sender, KeyEventArgs e)
         {
             if (isMenuVisible || isGameOver) return;
 
@@ -608,7 +642,7 @@ namespace Ping_Pong
         {
             base.OnFormClosing(e);
             gameTimer.Stop();
-            GL.DeleteTextures(29, textures);
+            GL.DeleteTextures(46, textures);
         }
     }
 }
