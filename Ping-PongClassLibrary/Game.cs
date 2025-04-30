@@ -112,10 +112,26 @@ namespace Ping_PongClassLibrary
             if (prizes.Count > 0)
                 return;
 
+            // Случайно выбираем, для какого игрока спавнить приз
             bool isLeftSide = random.Next(2) == 0;
-            double x = isLeftSide ? table.Left + 20 : table.Right - 20;
-            double y = table.Top + random.NextDouble() * (table.Height - 20);
-            int textureId = 4 + random.Next(3);
+
+            double x, y;
+            double prizeWidth = 40; 
+            double prizeHeight = 40;
+
+            if (isLeftSide)
+            {
+                x = random.NextDouble() * (table.Left - prizeWidth);
+            }
+            else
+            {
+                x = table.Right + random.NextDouble() * (screenWidth - table.Right - prizeWidth);
+            }
+
+            y = table.Top + random.NextDouble() * (table.Height - prizeHeight);
+
+            // Создаем приз
+            int textureId = 4 + random.Next(3); 
             var prize = prizeFactory.CreatePrize(x, y, textureId, gameTime);
             prizes.Add(prize);
         }
