@@ -16,7 +16,7 @@ namespace Ping_Pong
         private GLControl glControl;
         private Game game;
         private Timer gameTimer;
-        private int[] textures = new int[46]; // Увеличиваем до 46 для новой текстуры "Play"
+        private int[] textures = new int[48]; // Увеличиваем до 48 для IronPaddle1 и IronPaddle2
         private readonly string contentPath = Path.Combine(Application.StartupPath, "Content");
         private Button restartButton;
         private Button exitButton;
@@ -41,11 +41,15 @@ namespace Ping_Pong
 
         private const double paddleSpeed = 600.0;
 
-        // Размеры и позиция текстуры "Play" (уменьшены)
-        private double playTextureWidth = 100;  // Было 200, теперь 100
-        private double playTextureHeight = 50;  // Было 100, теперь 50
+        // Размеры и позиция текстуры "Play"
+        private double playTextureWidth = 100;
+        private double playTextureHeight = 50;
         private double playTextureX;
         private double playTextureY;
+
+        // Состояние материала ракеток
+        private bool isPlayer1PaddleIron = false;
+        private bool isPlayer2PaddleIron = false;
 
         // Словари для маппинга букв на индексы текстур
         private readonly Dictionary<char, int> redLetterTextures = new Dictionary<char, int>
@@ -78,8 +82,7 @@ namespace Ping_Pong
 
         private void InitializeMenu()
         {
-            // Кнопка "Play" реализована как текстура в OpenGL,
-            // поэтому здесь ничего не добавляем в элементы управления Windows Forms.
+            // Кнопка "Play" реализована как текстура в OpenGL
         }
 
         private void InitializeGameOverPanel()
@@ -130,6 +133,9 @@ namespace Ping_Pong
             player2TargetY = game.GetPlayer2Paddle().Y;
             isGameOver = false;
             isMenuVisible = false;
+            // Сбрасываем состояние материала ракеток
+            isPlayer1PaddleIron = false;
+            isPlayer2PaddleIron = false;
             UpdateControlVisibility();
             glControl.Focus();
             gameTimer.Start();
@@ -143,6 +149,9 @@ namespace Ping_Pong
             game = new Game(glControl.Width, glControl.Height);
             player1TargetY = game.GetPlayer1Paddle().Y;
             player2TargetY = game.GetPlayer2Paddle().Y;
+            // Сбрасываем состояние материала ракеток
+            isPlayer1PaddleIron = false;
+            isPlayer2PaddleIron = false;
             UpdateControlVisibility();
             gameTimer.Stop();
         }
@@ -219,7 +228,68 @@ namespace Ping_Pong
 
                     if (!isGameOver)
                     {
+                        // Сохраняем список призов до обновления
+                        var prizesBefore = new List<IPrize>(game.GetPrizes());
+
+                        // Обновляем состояние игры
                         game.Update(deltaTime);
+
+                        // Получаем список призов после обновления
+                        var prizesAfter = game.GetPrizes();
+
+                        // Проверяем, был ли подобран приз материала
+                        var paddle1 = game.GetPlayer1Paddle();
+                        var paddle2 = game.GetPlayer2Paddle();
+                        foreach (var prize in prizesBefore)
+                        {
+                            // Проверяем, если приз больше не существует в списке после обновления
+                            if (!prizesAfter.Contains(prize) && prize.TextureId == 6) // Приз материала
+                            {
+                                // Проверяем столкновение с ракеткой игрока 1
+                                if (!isPlayer1PaddleIron &&
+                                    prize.X < paddle1.X + paddle1.Width &&
+                                    prize.X + prize.Width > paddle1.X &&
+                                    prize.Y < paddle1.Y + paddle1.Height / 2 &&
+                                    prize.Y + prize.Height > paddle1.Y - paddle1.Height / 2)
+                                {
+                                    isPlayer1PaddleIron = true;
+                                }
+                                // Проверяем столкновение с ракеткой игрока 2
+                                else if (!isPlayer2PaddleIron &&
+                                         prize.X < paddle2.X + paddle2.Width &&
+                                         prize.X + prize.Width > paddle2.X &&
+                                         prize.Y < paddle2.Y + paddle2.Height / 2 &&
+                                         prize.Y + prize.Height > paddle2.Y - paddle2.Height / 2)
+                                {
+                                    isPlayer2PaddleIron = true;
+                                }
+                            }
+                        }
+
+                        // Проверяем, истекло ли действие приза материала
+                        bool wasPlayer1Iron = isPlayer1PaddleIron;
+                        bool wasPlayer2Iron = isPlayer2PaddleIron;
+                        isPlayer1PaddleIron = false;
+                        isPlayer2PaddleIron = false;
+
+                        foreach (var (prize, _, _) in game.GetType().GetField("player1ActivePrizes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(game) as List<(IPrize Prize, double ActivationTime, double Duration)> ?? new List<(IPrize, double, double)>())
+                        {
+                            if (prize is ChangeMaterialPrize)
+                            {
+                                isPlayer1PaddleIron = true;
+                                break;
+                            }
+                        }
+
+                        foreach (var (prize, _, _) in game.GetType().GetField("player2ActivePrizes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(game) as List<(IPrize Prize, double ActivationTime, double Duration)> ?? new List<(IPrize, double, double)>())
+                        {
+                            if (prize is ChangeMaterialPrize)
+                            {
+                                isPlayer2PaddleIron = true;
+                                break;
+                            }
+                        }
+
                         glControl.Invalidate();
                     }
 
@@ -260,7 +330,7 @@ namespace Ping_Pong
             if (!Directory.Exists(contentPath))
                 Directory.CreateDirectory(contentPath);
 
-            GL.GenTextures(46, textures);
+            GL.GenTextures(48, textures);
             LoadTextureFromFile(textures[0], "table.png", Color.DarkGreen);
             LoadTextureFromFile(textures[1], "paddle1.png", Color.White);
             LoadTextureFromFile(textures[2], "paddle2.png", Color.White);
@@ -288,9 +358,11 @@ namespace Ping_Pong
                 LoadTextureFromFile(textures[37 + i], $"{blueLetters[i]}Blue.png", Color.White);
 
             LoadTextureFromFile(textures[44], "gameover_background.png", Color.Gray);
-
-            // Загружаем текстуру "Play"
             LoadTextureFromFile(textures[45], "play.png", Color.Green);
+
+            // Загружаем текстуры для "железных" ракеток
+            LoadTextureFromFile(textures[46], "IronPaddle1.png", Color.Gray);
+            LoadTextureFromFile(textures[47], "IronPaddle2.png", Color.Gray);
         }
 
         private void LoadTextureFromFile(int textureId, string filename, Color fallbackColor)
@@ -337,7 +409,7 @@ namespace Ping_Pong
                         for (int y = 0; y < height; y += 10)
                             g.DrawLine(pen, 0, y, width, y);
                     }
-                    else if (color == Color.White)
+                    else if (color == Color.White || color == Color.Gray)
                     {
                         g.DrawRectangle(pen, 2, 2, width - 4, height - 4);
                     }
@@ -429,7 +501,6 @@ namespace Ping_Pong
                 GL.Clear(ClearBufferMask.ColorBufferBit);
                 DrawTexturedQuad(0, 0, glControl.Width, glControl.Height, textures[8]);
 
-                // Рассчитываем позицию текстуры "Play" с учетом новых размеров
                 playTextureX = (glControl.Width - playTextureWidth) / 2;
                 playTextureY = (glControl.Height / 2) + 20;
                 DrawTexturedQuad(playTextureX, playTextureY,
@@ -465,12 +536,12 @@ namespace Ping_Pong
                 var paddle1 = game.GetPlayer1Paddle();
                 DrawTexturedQuad(paddle1.X, paddle1.Y - paddle1.Height / 2,
                                  paddle1.Width, paddle1.Height,
-                                 textures[1]);
+                                 isPlayer1PaddleIron ? textures[46] : textures[1]); // Используем IronPaddle1, если активен приз
 
                 var paddle2 = game.GetPlayer2Paddle();
                 DrawTexturedQuad(paddle2.X, paddle2.Y - paddle2.Height / 2,
                                  paddle2.Width, paddle2.Height,
-                                 textures[2]);
+                                 isPlayer2PaddleIron ? textures[47] : textures[2]); // Используем IronPaddle2, если активен приз
 
                 var ball = game.GetBall();
                 if (!ball.IsPaused)
@@ -558,7 +629,6 @@ namespace Ping_Pong
         {
             if (isMenuVisible)
             {
-                // Проверяем, попал ли клик в область текстуры "Play"
                 if (e.X >= playTextureX && e.X <= playTextureX + playTextureWidth &&
                     e.Y >= playTextureY && e.Y <= playTextureY + playTextureHeight)
                 {
@@ -600,7 +670,7 @@ namespace Ping_Pong
                         isQPressed = true;
                     }
                     break;
-                case Keys.K:
+                case Keys.NumPad5:
                     if (!isKPressed && !game.GetGameManager().IsPlayer1Turn)
                     {
                         game.StrikePaddle2();
@@ -632,7 +702,7 @@ namespace Ping_Pong
                 case Keys.Q:
                     isQPressed = false;
                     break;
-                case Keys.K:
+                case Keys.NumPad5:
                     isKPressed = false;
                     break;
             }
@@ -642,7 +712,7 @@ namespace Ping_Pong
         {
             base.OnFormClosing(e);
             gameTimer.Stop();
-            GL.DeleteTextures(46, textures);
+            GL.DeleteTextures(48, textures);
         }
     }
 }
