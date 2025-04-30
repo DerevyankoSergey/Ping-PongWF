@@ -9,7 +9,7 @@ namespace Ping_PongClassLibrary
         public double Vx { get; private set; }
         public double Vy { get; private set; }
         public double Radius { get; private set; }
-        private const double BallSpeed = 300;
+        private const double BallSpeed = 600;
         private const double StrikeSpeedMultiplier = 1.5;
         private bool hasCollidedWithPaddle;
         private readonly Random random = new Random();
@@ -225,19 +225,15 @@ namespace Ping_PongClassLibrary
             bounceAngle += randomVariation;
             bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
 
-            double currentSpeed = Math.Sqrt(Vx * Vx + Vy * Vy);
-            double newSpeed = Math.Max(currentSpeed, BallSpeed);
+            // Фиксированная скорость мяча
+            double newSpeed = BallSpeed;
 
             if (paddle is Paddle p)
             {
-                if (p.IsStriking)
-                {
-                    newSpeed *= StrikeSpeedMultiplier;
-                    bounceAngle *= 1.2;
-                    bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
-                }
+                // Увеличиваем скорость только если активен ChangeMaterialPrize
+                newSpeed *= p.SpeedModifier; // SpeedModifier = 2.0 для ChangeMaterialPrize, иначе 1.0
                 bounceAngle *= p.BounceModifier;
-                newSpeed *= p.SpeedModifier;
+                Console.WriteLine($"Paddle collision, SpeedModifier: {p.SpeedModifier}, newSpeed: {newSpeed}");
             }
 
             Vx = newSpeed * Math.Cos(bounceAngle) * (isLeftPaddle ? 1 : -1);
