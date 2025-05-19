@@ -4,339 +4,108 @@ namespace Ping_PongClassLibrary
 {
     public class Ball
     {
-        public double X { get; private set; }
-        public double Y { get; private set; }
-        public double Vx { get; private set; }
-        public double Vy { get; private set; }
-        public double Radius { get; private set; }
-        private const double BallSpeed = 600;
-        private const double StrikeSpeedMultiplier = 1.5;
-        private bool hasCollidedWithPaddle;
-        private readonly Random random = new Random();
-        private IPaddle player1Paddle;
-        private IPaddle player2Paddle;
-        private bool isPaused;
-        private double pauseTime;
-        private const double PauseDuration = 1.0;
-        private bool isPausedDueToOutOfBounds;
-        private bool isWaitingForServe;
-        private bool isPlayer1Serving;
-        private readonly Table table;
-        private bool hasTouchedOpponentTable;
+        private readonly BallPhysics physics;
+        private readonly BallAnimation animation;
 
-        public event Action<bool> OnScore;
+        public double X => physics.X;
+        public double Y => physics.Y;
+        public double Vx => physics.Vx;
+        public double Vy => physics.Vy;
+        public double Radius => physics.Radius;
+        public bool IsPaused => physics.IsPaused;
+        public double GetPauseTime => physics.GetPauseTime;
+        public bool IsPausedDueToOutOfBounds => physics.IsPausedDueToOutOfBounds;
+        public float ScaleX => animation.ScaleX;
+        public float ScaleY => animation.ScaleY;
+        public bool IsImpactAnimationActive => animation.IsImpactAnimationActive;
+        public double ImpactX => animation.ImpactX;
+        public double ImpactY => animation.ImpactY;
+        public int ImpactFrame => animation.ImpactFrame;
 
-        public Ball(double x, double y, double radius,
-                IPaddle player1Paddle, IPaddle player2Paddle, Table table)
+        public event Action<BallPhysics.BallState> OnPotentialScore
         {
-            X = x;
-            Y = y;
-            Radius = radius;
-            this.player1Paddle = player1Paddle;
-            this.player2Paddle = player2Paddle;
-            Vx = 0;
-            Vy = 0;
-            hasCollidedWithPaddle = false;
-            isPaused = false;
-            pauseTime = 0;
-            isPausedDueToOutOfBounds = false;
-            isWaitingForServe = false;
-            hasTouchedOpponentTable = false;
-            this.table = table;
+            add => physics.OnPotentialScore += value;
+            remove => physics.OnPotentialScore -= value;
         }
 
-        public bool IsPaused => isPaused;
-        public double GetPauseTime => pauseTime;
-        public bool IsPausedDueToOutOfBounds => isPausedDueToOutOfBounds;
+        public Ball(double x, double y, double radius, IPaddle player1Paddle, IPaddle player2Paddle, Table table)
+        {
+            physics = new BallPhysics(x, y, radius, player1Paddle, player2Paddle, table);
+            animation = new BallAnimation();
+        }
 
+        /// <summary>
+        /// Обновляет состояние мяча на каждом игровом цикле, включая физику движения и анимацию.
+        /// </summary>
+        public void Update(double deltaTime, int screenWidth, int screenHeight,
+                           int tableLeft, int tableRight, int tableTop, int tableBottom,
+                           bool isPlayer1Serving)
+        {
+            physics.Update(deltaTime, screenWidth, screenHeight, tableLeft, tableRight, tableTop, tableBottom, isPlayer1Serving);
+            animation.Update(deltaTime, physics, tableLeft, tableRight);
+        }
+
+        /// <summary>
+        /// Обновляет ссылки на ракетки игроков, передавая их в объект физики мяча.
+        /// </summary>
         public void UpdatePaddles(IPaddle newPlayer1Paddle, IPaddle newPlayer2Paddle)
         {
-            player1Paddle = newPlayer1Paddle;
-            player2Paddle = newPlayer2Paddle;
+            physics.UpdatePaddles(newPlayer1Paddle, newPlayer2Paddle);
         }
 
-        public void Update(double deltaTime, int screenWidth, int screenHeight,
-            int tableLeft, int tableRight, int tableTop, int tableBottom,
-            bool isPlayer1Serving)
-        {
-            if (isPaused)
-            {
-                pauseTime -= deltaTime;
-                if (pauseTime <= 0)
-                {
-                    isPaused = false;
-                    ResetForServe(screenWidth, screenHeight, tableLeft, tableRight,
-                                  tableTop, tableBottom, isPlayer1Serving);
-                }
-                return;
-            }
-
-            if (isWaitingForServe)
-            {
-                IPaddle servingPaddle = isPlayer1Serving ? player1Paddle : player2Paddle;
-                bool serveResult = ServeByPaddle(servingPaddle, isPlayer1Serving);
-                if (serveResult)
-                {
-                    isWaitingForServe = false;
-                    hasTouchedOpponentTable = false;
-                }
-                return;
-            }
-
-            if (Vx == 0 && Vy == 0)
-            {
-                return;
-            }
-
-            double previousX = X;
-            double previousY = Y;
-
-            X += Vx * deltaTime;
-            Y += Vy * deltaTime;
-
-            if (!hasTouchedOpponentTable)
-            {
-                double netX = (tableLeft + tableRight) / 2;
-                bool isMovingLeft = Vx < 0;
-                bool isMovingRight = Vx > 0;
-
-                bool targetingRightHalf = isMovingRight && hasCollidedWithPaddle && previousX < netX;
-                bool targetingLeftHalf = isMovingLeft && hasCollidedWithPaddle && previousX > netX;
-
-                if ((targetingRightHalf || targetingLeftHalf) &&
-                    Y >= tableTop && Y <= tableBottom)
-                {
-                    if (targetingRightHalf && X >= netX && previousX < netX)
-                    {
-                        hasTouchedOpponentTable = true;
-                    }
-                    else if (targetingLeftHalf && X <= netX && previousX > netX)
-                    {
-                        hasTouchedOpponentTable = true;
-                    }
-                }
-            }
-
-            if (Vx < 0)
-            {
-                CheckContinuousCollision(X - Vx * deltaTime, Y - Vy * deltaTime, player1Paddle, true);
-            }
-            else if (Vx > 0)
-            {
-                CheckContinuousCollision(X - Vx * deltaTime, Y - Vy * deltaTime, player2Paddle, false);
-            }
-
-            bool isScore = false;
-            bool isPlayer1Miss = false;
-
-            if (X - Radius < 0)
-            {
-                isScore = true;
-                isPlayer1Miss = hasTouchedOpponentTable || !hasCollidedWithPaddle;
-            }
-            else if (X + Radius > screenWidth)
-            {
-                isScore = true;
-                isPlayer1Miss = !(hasTouchedOpponentTable || !hasCollidedWithPaddle);
-            }
-
-            if (isScore)
-            {
-                OnScore?.Invoke(isPlayer1Miss);
-                hasCollidedWithPaddle = false;
-                isPaused = true;
-                pauseTime = PauseDuration;
-                isPausedDueToOutOfBounds = true;
-                hasTouchedOpponentTable = false;
-            }
-        }
-
-        private void CheckContinuousCollision(double prevX, double prevY, IPaddle paddle, bool isLeftPaddle)
-        {
-            double paddingX = paddle.Width * 0.05;
-            double paddingY = paddle.Height * 0.05;
-
-            double paddleLeft = paddle.X + paddingX;
-            double paddleRight = paddle.X + paddle.Width - paddingX;
-            double paddleTop = paddle.Y - paddle.Height / 2 + paddingY;
-            double paddleBottom = paddle.Y + paddle.Height / 2 - paddingY;
-
-            double deltaX = X - prevX;
-            double deltaY = Y - prevY;
-
-            if ((isLeftPaddle && Vx < 0) || (!isLeftPaddle && Vx > 0))
-            {
-                double closestX, closestY;
-
-                if (isLeftPaddle)
-                {
-                    closestX = paddleRight;
-                    if (prevX - Radius <= closestX && X - Radius >= closestX)
-                    {
-                        return;
-                    }
-                }
-                else
-                {
-                    closestX = paddleLeft;
-                    if (prevX + Radius >= closestX && X + Radius <= closestX)
-                    {
-                        return;
-                    }
-                }
-
-                double t = (closestX - (prevX + (isLeftPaddle ? -Radius : Radius))) / deltaX;
-
-                if (t < 0 || t > 1)
-                {
-                    return;
-                }
-
-                closestY = prevY + t * deltaY;
-
-                if (closestY >= paddleTop - Radius && closestY <= paddleBottom + Radius)
-                {
-                    HandlePaddleCollision(paddle, isLeftPaddle);
-                    X = isLeftPaddle ? paddleRight + Radius : paddleLeft - Radius;
-                    Y = closestY;
-                    hasTouchedOpponentTable = false;
-                }
-            }
-        }
-
-        private void HandlePaddleCollision(IPaddle paddle, bool isLeftPaddle)
-        {
-            hasCollidedWithPaddle = true;
-
-            double hitY = (Y - paddle.Y) / (paddle.Height / 2);
-            hitY = Math.Max(-1.0, Math.Min(1.0, hitY));
-
-            const double maxAngle = Math.PI / 4;
-
-            double baseAngle = hitY * maxAngle;
-
-            double paddleInfluence = paddle.Vy / 600.0;
-            double angleAdjustment = paddleInfluence * (Math.PI / 12);
-            double bounceAngle = baseAngle + angleAdjustment;
-
-            bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
-
-            double randomVariation = (random.NextDouble() - 0.5) * (Math.PI / 36);
-            bounceAngle += randomVariation;
-            bounceAngle = Math.Max(-maxAngle, Math.Min(maxAngle, bounceAngle));
-
-            // Фиксированная скорость мяча
-            double newSpeed = BallSpeed;
-
-            if (paddle is Paddle p)
-            {
-                // Увеличиваем скорость только если активен ChangeMaterialPrize
-                newSpeed *= p.SpeedModifier; // SpeedModifier = 2.0 для ChangeMaterialPrize, иначе 1.0
-                bounceAngle *= p.BounceModifier;
-                Console.WriteLine($"Paddle collision, SpeedModifier: {p.SpeedModifier}, newSpeed: {newSpeed}");
-            }
-
-            Vx = newSpeed * Math.Cos(bounceAngle) * (isLeftPaddle ? 1 : -1);
-            Vy = newSpeed * Math.Sin(bounceAngle);
-        }
-
+        /// <summary>
+        /// Выполняет подачу мяча ударом ракеткой.
+        /// </summary>
         public bool ServeByPaddle(IPaddle paddle, bool isLeftPaddle)
         {
-            double paddingX = paddle.Width * 0.05;
-            double paddingY = paddle.Height * 0.05;
-
-            double paddleX = paddle.X;
-            double paddleLeft = paddleX + paddingX;
-            double paddleRight = paddleX + paddle.Width - paddingX;
-            double paddleTop = paddle.Y - paddle.Height / 2 + paddingY;
-            double paddleBottom = paddle.Y + paddle.Height / 2 - paddingY;
-
-            double ballLeft = X - Radius;
-            double ballRight = X + Radius;
-            double ballTop = Y - Radius;
-            double ballBottom = Y + Radius;
-
-            bool isColliding = ballRight >= paddleLeft && ballLeft <= paddleRight &&
-                               ballBottom >= paddleTop && ballTop <= paddleBottom;
-
-            if (isColliding)
-            {
-                hasCollidedWithPaddle = true;
-
-                double hitPosition = (Y - paddle.Y) / (paddle.Height / 2);
-                hitPosition = Math.Max(-1, Math.Min(1, hitPosition));
-
-                double maxBounceAngle = Math.PI / 12;
-                double bounceAngle = hitPosition * maxBounceAngle;
-
-                double speed = BallSpeed;
-                Paddle p = paddle as Paddle;
-                if (p != null)
-                {
-                    speed *= p.SpeedModifier;
-                    if (p.IsStriking)
-                    {
-                        speed *= StrikeSpeedMultiplier;
-                    }
-                }
-
-                Vx = speed * Math.Cos(bounceAngle) * (isLeftPaddle ? 1 : -1);
-                Vy = speed * Math.Sin(bounceAngle);
-
-                if (isLeftPaddle)
-                {
-                    X = paddleRight + Radius;
-                }
-                else
-                {
-                    X = paddleLeft - Radius;
-                }
-
-                return true;
-            }
-
-            return false;
+            bool served = physics.ServeByPaddle(paddle, isLeftPaddle);
+            return served;
         }
 
-        public void ResetForServe(int screenWidth, int screenHeight,
-                 int tableLeft, int tableRight,
-                 int tableTop, int tableBottom,
-                 bool isPlayer1Serving)
+        /// <summary>
+        /// Приостанавливает движение мяча, переводя его в состояние паузы.
+        /// </summary>
+        public void PauseBall()
         {
-            double centerY = (tableTop + tableBottom) / 2;
-            if (isPlayer1Serving)
-            {
-                X = tableLeft + 60;
-                Y = Math.Max(Radius, Math.Min(screenHeight - Radius, centerY));
-            }
-            else
-            {
-                X = tableRight - 60;
-                Y = Math.Max(Radius, Math.Min(screenHeight - Radius, centerY));
-            }
-            Vx = 0;
-            Vy = 0;
-            hasCollidedWithPaddle = false;
-            isPausedDueToOutOfBounds = false;
-            isWaitingForServe = true;
-            this.isPlayer1Serving = isPlayer1Serving;
-            hasTouchedOpponentTable = false;
+            physics.PauseBall();
         }
 
+        /// <summary>
+        /// Подготавливает мяч к подаче, размещая его рядом с ракеткой подающего игрока и сбрасывая анимацию.
+        /// </summary>
+        public void ResetForServe(int screenWidth, int screenHeight,
+                                  int tableLeft, int tableRight,
+                                  int tableTop, int tableBottom,
+                                  bool isPlayer1Serving)
+        {
+            physics.ResetForServe(screenWidth, screenHeight, tableLeft, tableRight, tableTop, tableBottom, isPlayer1Serving);
+            animation.ResetAnimation();
+        }
+
+        /// <summary>
+        /// Выполняет автоматическую подачу мяча и запускает анимацию столкновения.
+        /// </summary>
         public void Serve(bool isLeft)
         {
-            Vx = BallSpeed * (isLeft ? 1 : -1);
-            Vy = 0;
-            hasCollidedWithPaddle = false;
-            isWaitingForServe = false;
-            hasTouchedOpponentTable = false;
+            physics.Serve(isLeft);
+            animation.StartCollisionAnimation();
         }
 
+        /// <summary>
+        /// Инициирует процесс подачи, подготавливая состояние мяча и сбрасывая анимацию.
+        /// </summary>
         public void InitiateServe(bool isPlayer1Serving)
         {
-            isWaitingForServe = true;
-            this.isPlayer1Serving = isPlayer1Serving;
-            hasTouchedOpponentTable = false;
+            physics.InitiateServe(isPlayer1Serving);
+            animation.ResetAnimation();
+        }
+
+        /// <summary>
+        /// Запускает анимацию подачи мяча (визуальный эффект столкновения).
+        /// </summary>
+        public void TriggerServeAnimation()
+        {
+            animation.StartCollisionAnimation();
         }
     }
 }

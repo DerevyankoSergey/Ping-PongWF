@@ -17,10 +17,9 @@ namespace Ping_PongClassLibrary
 
         public Table(double screenWidth, double screenHeight)
         {
-            Width = screenWidth * 0.8;  // 80% ширины окна
-            Height = screenHeight * 0.7; // 70% высоты окна
+            Width = screenWidth * 0.8;  
+            Height = screenHeight * 0.7; 
 
-            // Центрирование:
             Left = (screenWidth - Width) / 2;
             Top = (screenHeight - Height) / 2;
             Right = Left + Width;

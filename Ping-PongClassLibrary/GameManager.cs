@@ -11,11 +11,17 @@ namespace Ping_PongClassLibrary
         public bool GameOver { get; set; }
         public int Winner { get; set; }
 
+        /// <summary>
+        /// Инициализирует новый экземпляр GameManager и сбрасывает состояние игры.
+        /// </summary>
         public GameManager()
         {
             ResetGame();
         }
 
+        /// <summary>
+        /// Сбрасывает состояние игры до начального: обнуляет счет, устанавливает подачу за игроком 1 и сбрасывает флаг завершения игры.
+        /// </summary>
         public void ResetGame()
         {
             Score1 = 0;
@@ -26,6 +32,9 @@ namespace Ping_PongClassLibrary
             Winner = 0;
         }
 
+        /// <summary>
+        /// Начисляет очко одному из игроков на основе того, кто допустил ошибку, и обновляет состояние игры.
+        /// </summary>
         public void AwardPoint(bool isPlayer1Miss)
         {
             if (isPlayer1Miss)
@@ -41,6 +50,9 @@ namespace Ping_PongClassLibrary
             CheckWinner();
         }
 
+        /// <summary>
+        /// Обновляет очередность подачи согласно правилам: смена после 2 подач или после каждой подачи при счете 10:10 и выше.
+        /// </summary>
         public void UpdateServe()
         {
             ServeCount++;
@@ -57,17 +69,51 @@ namespace Ping_PongClassLibrary
             }
         }
 
+        /// <summary>
+        /// Проверяет, достиг ли один из игроков победного счета (11 очков), и устанавливает флаг завершения игры и победителя.
+        /// </summary>
         public void CheckWinner()
         {
-            if (Score1 >= 11 && Score1 >= Score2 + 2)
+            if (Score1 >= 11)
             {
                 GameOver = true;
                 Winner = 1;
             }
-            else if (Score2 >= 11 && Score2 >= Score1 + 2)
+            else if (Score2 >= 11)
             {
                 GameOver = true;
                 Winner = 2;
+            }
+        }
+
+        /// <summary>
+        /// Определяет, нужно ли начислить очко, и кому, на основе состояния мяча и правил игры.
+        /// </summary>
+        public void DetermineScore(BallPhysics.BallState ballState, int screenWidth, int screenHeight, int tableTop, int tableBottom)
+        {
+            bool isScore = false;
+            bool isPlayer1Miss = false;
+
+            if (ballState.X - ballState.Radius < 0 && ballState.Vx < 0)
+            {
+                isScore = true;
+                isPlayer1Miss = ballState.LastPaddleHit == 2 && ballState.HasTouchedOpponentTable;
+            }
+            else if (ballState.X + ballState.Radius > screenWidth && ballState.Vx > 0)
+            {
+                isScore = true;
+                isPlayer1Miss = !(ballState.LastPaddleHit == 1 && ballState.HasTouchedOpponentTable);
+            }
+            else if ((ballState.Y - ballState.Radius < tableTop && ballState.Vy < 0) ||
+                     (ballState.Y + ballState.Radius > tableBottom && ballState.Vy > 0))
+            {
+                isScore = true;
+                isPlayer1Miss = ballState.LastPaddleHit == 1;
+            }
+
+            if (isScore)
+            {
+                AwardPoint(isPlayer1Miss);
             }
         }
     }
